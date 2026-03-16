@@ -9,12 +9,14 @@ const { ensureDir } = require('./utils');
  * Manages asset downloading and localization.
  */
 class AssetManager {
-  constructor(outputDir, baseUrl) {
+  constructor(outputDir, baseUrl, networkLog = new Map()) {
     this.outputDir = outputDir;
     this.assetsDir = path.join(outputDir, 'assets');
     this.baseUrl = baseUrl;
+    this.networkLog = networkLog;
     this.downloadedAssets = new Map(); // absoluteUrl -> localPath
     this.processingAssets = new Set(); // To prevent infinite loops
+    this.manifest = []; // To track what was localized
     ensureDir(this.assetsDir);
   }
 
@@ -48,31 +50,52 @@ class AssetManager {
       const urlObj = new URL(absoluteUrl);
       let ext = path.extname(urlObj.pathname);
       
-      // If no extension, try to guess from content-type or just use .bin
+      const networkEntry = this.networkLog.get(absoluteUrl);
+      let content;
+      let contentType = '';
+
+      if (networkEntry) {
+        content = networkEntry.content;
+        contentType = networkEntry.contentType;
+      } else {
+        // Fallback to axios if not in network log
+        const response = await axios({
+          method: 'get',
+          url: absoluteUrl,
+          responseType: isCss ? 'text' : 'arraybuffer',
+          timeout: 10000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        });
+        content = response.data;
+        contentType = response.headers['content-type'] || '';
+      }
+
+      // If no extension, try to guess from content-type
+      if (!ext) {
+        if (contentType.includes('javascript')) ext = '.js';
+        else if (contentType.includes('css')) ext = '.css';
+        else if (contentType.includes('json')) ext = '.json';
+        else if (contentType.includes('image/png')) ext = '.png';
+        else if (contentType.includes('image/jpeg')) ext = '.jpg';
+        else if (contentType.includes('image/svg')) ext = '.svg';
+      }
+
       const filename = `${Math.random().toString(36).slice(2, 10)}${ext || '.bin'}`;
       const filePath = path.join(this.assetsDir, filename);
 
-      const response = await axios({
-        method: 'get',
-        url: absoluteUrl,
-        responseType: isCss ? 'text' : 'arraybuffer',
-        timeout: 10000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-      });
-
-      let content = response.data;
-
-      if (isCss) {
-        content = await this.processCss(content, absoluteUrl);
-        fs.writeFileSync(filePath, content);
+      if (isCss || contentType.includes('css')) {
+        const cssText = content.toString();
+        const processedCss = await this.processCss(cssText, absoluteUrl);
+        fs.writeFileSync(filePath, processedCss);
       } else {
         fs.writeFileSync(filePath, Buffer.from(content));
       }
 
       const localPath = `assets/${filename}`;
       this.downloadedAssets.set(absoluteUrl, localPath);
+      this.manifest.push({ original: absoluteUrl, local: localPath, type: contentType });
       return localPath;
     } catch (err) {
       console.error(`[ASSETS] Failed to download ${absoluteUrl}: ${err.message}`);
@@ -178,7 +201,9 @@ class AssetManager {
     const assetTags = [
       { regex: /src=["'](?!data:|assets\/)([^"']+)["']/gi, type: 'src' },
       { regex: /href=["'](?!data:|assets\/)([^"']+)["']/gi, type: 'href' },
-      { regex: /url\(["']?(?!data:|assets\/)([^"'\)]+)["']?\)/gi, type: 'css-inline' }
+      { regex: /url\(["']?(?!data:|assets\/)([^"'\)]+)["']?\)/gi, type: 'css-inline' },
+      { regex: /data-src=["'](?!data:|assets\/)([^"']+)["']/gi, type: 'data-src' },
+      { regex: /data-href=["'](?!data:|assets\/)([^"']+)["']/gi, type: 'data-href' }
     ];
 
     const foundAssets = [];
@@ -190,6 +215,15 @@ class AssetManager {
         if (absoluteUrl) {
           foundAssets.push({ originalUrl, absoluteUrl, type: tag.type });
         }
+      }
+    }
+
+    // Also include assets from network log that might be needed (JS chunks, JSON data)
+    for (const [url, entry] of this.networkLog.entries()) {
+      if (entry.resourceType === 'script' || entry.resourceType === 'fetch' || entry.resourceType === 'xhr') {
+        // We don't necessarily replace them in HTML if they are dynamic, 
+        // but we download them so they are available in the assets folder.
+        await this.downloadAsset(url);
       }
     }
 
@@ -215,12 +249,12 @@ class AssetManager {
       }
     }
 
-    return localizedHtml;
+    return { localizedHtml, manifest: this.manifest };
   }
 }
 
-async function saveAssets(page, html, outputDir, baseUrl) {
-  const manager = new AssetManager(outputDir, baseUrl);
+async function saveAssets(page, html, outputDir, baseUrl, networkLog) {
+  const manager = new AssetManager(outputDir, baseUrl, networkLog);
   return await manager.localizeHtml(html);
 }
 

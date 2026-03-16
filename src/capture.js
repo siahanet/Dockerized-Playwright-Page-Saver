@@ -81,12 +81,43 @@ async function capturePage(jobId, options) {
       const page = await context.newPage();
 
       const requests = [];
+      const networkLog = new Map(); // absoluteUrl -> { content: Buffer|string, contentType: string }
+      
       page.on('request', request => {
         requests.push({
           url: request.url(),
           method: request.method(),
           resourceType: request.resourceType()
         });
+      });
+
+      page.on('response', async response => {
+        const url = response.url();
+        const resourceType = response.request().resourceType();
+        const status = response.status();
+
+        // We only care about successful responses for relevant types
+        if (status >= 200 && status < 300) {
+          const relevantTypes = ['script', 'stylesheet', 'image', 'font', 'fetch', 'xhr'];
+          if (relevantTypes.includes(resourceType)) {
+            try {
+              // Only capture same-origin or relevant external assets to avoid massive memory usage
+              const isSameOrigin = new URL(url).origin === new URL(options.url).origin;
+              const isStaticAsset = ['script', 'stylesheet', 'image', 'font'].includes(resourceType);
+              
+              if (isSameOrigin || isStaticAsset) {
+                const buffer = await response.body();
+                networkLog.set(url, {
+                  content: buffer,
+                  contentType: response.headers()['content-type'] || '',
+                  resourceType
+                });
+              }
+            } catch (e) {
+              // Some responses might not have a body or fail to read
+            }
+          }
+        }
       });
 
       const failedRequests = [];
@@ -148,9 +179,18 @@ async function capturePage(jobId, options) {
       if (saveHtml) {
         log('Capturing and localizing HTML...');
         const rawHtml = await page.content();
-        const localizedHtml = await saveAssets(page, rawHtml, outputDir, finalUrl);
+        const { localizedHtml, manifest } = await saveAssets(page, rawHtml, outputDir, finalUrl, networkLog);
         fs.writeFileSync(path.join(outputDir, 'page.html'), localizedHtml);
         metadata.files.html = 'page.html';
+        
+        // Save network summary with localization info
+        fs.writeFileSync(path.join(outputDir, 'network-summary.json'), JSON.stringify({
+          totalRequests: requests.length,
+          failedRequests: failedRequests.length,
+          failedDetails: failedRequests,
+          localizedAssets: manifest
+        }, null, 2));
+        metadata.files.networkSummary = 'network-summary.json';
       }
 
       if (saveScreenshot) {
@@ -174,13 +214,6 @@ async function capturePage(jobId, options) {
 
       fs.writeFileSync(path.join(outputDir, 'console.log'), consoleLogs.join('\n'));
       metadata.files.consoleLog = 'console.log';
-
-      fs.writeFileSync(path.join(outputDir, 'network-summary.json'), JSON.stringify({
-        totalRequests: requests.length,
-        failedRequests: failedRequests.length,
-        failedDetails: failedRequests
-      }, null, 2));
-      metadata.files.networkSummary = 'network-summary.json';
 
       metadata.captureDuration = Date.now() - startTime;
       fs.writeFileSync(path.join(outputDir, 'metadata.json'), JSON.stringify(metadata, null, 2));
