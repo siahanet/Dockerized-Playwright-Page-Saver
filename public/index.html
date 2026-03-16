@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Playwright Page Saver</title>
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌐 Page Saver</h1>
+            <p>Capture fully rendered web pages with Playwright</p>
+        </header>
+
+        <main>
+            <section class="capture-form card">
+                <h2>New Capture</h2>
+                <div class="form-group">
+                    <label for="url">Target URL</label>
+                    <input type="url" id="url" placeholder="https://example.com" required>
+                </div>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="waitUntil">Wait Until</label>
+                        <select id="waitUntil">
+                            <option value="networkidle">Network Idle</option>
+                            <option value="load">Load</option>
+                            <option value="domcontentloaded">DOM Content Loaded</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="delay">Extra Delay (ms)</label>
+                        <input type="number" id="delay" value="3000" step="500">
+                    </div>
+                    <div class="form-group">
+                        <label for="width">Width</label>
+                        <input type="number" id="width" value="1440">
+                    </div>
+                    <div class="form-group">
+                        <label for="height">Height</label>
+                        <input type="number" id="height" value="900">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="session">Session (Storage State)</label>
+                    <select id="session">
+                        <option value="">None</option>
+                    </select>
+                </div>
+
+                <div class="checkbox-grid">
+                    <label><input type="checkbox" id="saveHtml" checked> Save HTML</label>
+                    <label><input type="checkbox" id="saveScreenshot" checked> Save Screenshot</label>
+                    <label><input type="checkbox" id="savePdf"> Save PDF</label>
+                    <label><input type="checkbox" id="scroll" checked> Auto-Scroll</label>
+                    <label><input type="checkbox" id="headless" checked> Headless</label>
+                    <label><input type="checkbox" id="saveSession"> Export Session</label>
+                </div>
+
+                <button id="startBtn" class="btn-primary">Start Capture</button>
+            </section>
+
+            <section id="activeJob" class="card hidden">
+                <h2>Current Job</h2>
+                <div id="jobStatus" class="status-badge">Pending</div>
+                <div class="progress-container">
+                    <div id="progressBar" class="progress-bar"></div>
+                </div>
+                <div id="jobLogs" class="log-container"></div>
+                <div id="jobResult" class="hidden">
+                    <h3>Result</h3>
+                    <ul id="fileList"></ul>
+                </div>
+            </section>
+
+            <section class="history card">
+                <h2>Recent Captures</h2>
+                <div id="historyList" class="history-list">
+                    <p class="empty-msg">No captures yet.</p>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

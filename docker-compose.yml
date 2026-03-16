@@ -1,0 +1,12 @@
+services:
+  page-saver:
+    build: .
+    ports:
+      - "38473:38473"
+    volumes:
+      - ./outputs:/app/outputs
+      - ./sessions:/app/sessions
+    environment:
+      - PORT=38473
+      - NODE_ENV=production
+    restart: unless-stopped

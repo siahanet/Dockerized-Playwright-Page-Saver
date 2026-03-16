@@ -1,0 +1,5 @@
+{
+  "name": "Dockerized Playwright Page Saver",
+  "description": "A robust tool to capture and save fully rendered web pages with a web UI and asset localization.",
+  "requestFramePermissions": []
+}
